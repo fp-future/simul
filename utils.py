@@ -885,7 +885,8 @@ def latticePlanner(ref_path,global_vaild_object,vehicle_status,current_lane,
     레인(선)의 길이(look_distance), 개수(branch), 레인 간 거리(offset) 설정
     레인의 설정 값에 맞추어 레인 각각의 시작 및 끝 waypoint 설정
     가중치(weight)에 따라 weight가 가장 작은 레인 최종 선정
-    전역 및 지역 경로를 동일한 방식으로 
+    전역 및 지역 경로를 동일한 방식으로 설정.
+    최종 설정한 경로를 ROS 메세지 형식으로 변환..
     '''
     out_path=[]
     selected_lane=-1
