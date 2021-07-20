@@ -145,7 +145,10 @@ class Waypoint:
     def _calc_straight_sub_waypoint(self, position1, position2):
         '''
         반환값 : 직선 도로 waypoints
-        지정한 간격만큼 이웃한 두 점의 거리
+        지정한 간격만큼 이웃한 두 점의 거리로 waypoint 개수 측정
+        x, y 각각의 간격을 측정한 후 초기값에 대입하여 직선 waypoint 생성
+        -> 이는 직선이기 때문에 x, y 중 1개만 변하는 점이 있기 때문이다.
+        땅이 평평하다는 조건 하에 z 값 고려하지 않음
         '''
         waypoint_term = 0.3
 
@@ -173,7 +176,12 @@ class Waypoint:
 
     def _calc_curved_sub_waypoint(self, position1, position2, position3):
         '''
-        곡선도로 waypoint 분할. z축은 일단 고려 안함.
+        반환값 : 곡선 waypoint
+        3개의 점을 이용하여 원의 방정식으로 곡선을 구한다.
+        점 (1,2)/(2,3)의 거리와 기울기를 구함.
+        이를 이용하여 x, y의 중심을 구함.
+        x, y 중심으로 원의 반지름을 구하고, 앞서 구한 거리로 waypoint 개수를 구함.
+        x, y 각각의 간격을 구하고 원의 방정식을 이용하여 최종 곡선 waypoint를 생성.
         '''
         waypoint_term = 0.3
 
@@ -224,7 +232,8 @@ class Waypoint:
 
     def _check_term_with_end_point(self, end_point, current_points):
         '''
-        waypoint가 튀는 현상을 방지하기 위해 마지막 waypoint와 거리를 계산해서 얼마나 가까운지 체크.
+        반환값 : end point를 이용하여 간격 측정
+        end point와 두점 사이의 거리값을 이용하여 이상치 조정.
         '''
         is_out_of_angle = False
 
@@ -252,7 +261,8 @@ class Waypoint:
 
     def _check_term_with_prev_point(self, prev_point, current_points):
         '''
-        waypoint가 튀는 현상을 방지하기 위해 이전 waypoint와 거리를 계산해서 얼마나 벌어졌는지 체크.
+        반환값 : 이전 point로 생성 waypoint 간격 측정
+        3점 사이의 거리를 이용하여 waypoint 간격에 이상치가 생기지 않도록 조정
         '''
         is_out_of_angle = False
 
@@ -280,8 +290,9 @@ class Waypoint:
     
     def _check_angle_with_prev_point(self, prev_points, current_points):
         '''
-        waypoint가 튀는 현상을 방지하기 위해 이전 waypoint와 angle 차이를 측정.
-        사용 x
+        반환값 : 이전 point로 각도 조정
+        4개의 점을 이용하여 기울기를 측정한 다음 tan^-1(=atan)을 이용하여 이상치가 생기지 않도록 조정
+        이 코드에서는 사용하지 않음.
         '''
         is_out_of_angle = False
 
@@ -314,7 +325,7 @@ class Waypoint:
 
     def _convert_waypoints_to_poses(self):
         '''
-        waypoints를 PoseStamped 형태로 변환.
+        앞서 생성한 waypoint를 ros 메세지 형식으로 바꿈(x, y, z, yaw)
         '''
         paths = []
         for idx, load in enumerate(self.waypoints):
@@ -334,30 +345,53 @@ class Waypoint:
             self.waypoints[idx]['path'] = out_path
 
 class Recorder:
+    '''
+    컨트롤 메세지를 저장하고 재생하는 클래스
+    '''
     def __init__(self):
         self.ctrl_buffer = []
         self.pointer = -1
     
     def record_once(self, ctrl_msg):
+        '''
+        컨트롤 메세지를 받아 컨트롤 버퍼에 저장
+        포인터 값은 1 증가
+        '''
         self.ctrl_buffer.append(ctrl_msg)
         self.pointer += 1
     
     def replay_once(self):
+        '''
+        포인터 값을 이용하여 생성된 컨트롤 버퍼를 반환해줌(재생)
+        '''
         if self.pointer >= 0:
             self.pointer -= 1
             return self.ctrl_buffer[self.pointer + 1]
 
     def replay_list(self):
+        '''
+        컨트롤 버퍼를 반환하여 재생 리스트 생성
+        '''
         return self.ctrl_buffer
 
 class Scenario:
+    '''
+    시나리오 파일을 읽어와 내부 
     def __init__(self, pkg_name, scenario_name):
+        '''
+        패키지명으로 파일경로 읽음.
+        패키지경로/scenario/시나리오명.pickle 파일 열기
+        '''
         rospack=rospkg.RosPack()
         self.pkg_path = rospack.get_path(pkg_name)
         self.file_path = self.pkg_path + '/scenario/' + scenario_name + '.pickle'
         self.scenario = pickle.load(open(self.file_path, 'rb')) # , encoding='bytes'
     
     def to_waypoints(self):
+        '''
+        시나리오에서 앞서 waypoint를 ros 메세지 형식으로 변환하여 global_path에 추가
+        x, y, z, yaw
+        '''
         self.global_paths = []
         for link in self.scenario:
             path=Path()
