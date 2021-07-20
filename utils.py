@@ -376,7 +376,8 @@ class Recorder:
 
 class Scenario:
     '''
-    시나리오 파일을 읽어와 내부 
+    시나리오 파일을 읽어와 ROS 메세지 형식으로 global_path 추가
+    '''
     def __init__(self, pkg_name, scenario_name):
         '''
         패키지명으로 파일경로 읽음.
@@ -416,11 +417,21 @@ class Scenario:
         return
 
 class pathReader :
+    '''
+    지역경로를 읽어 경로에 맞는 waypoint 설정 후 ROS 메세지로 변환
+    '''
     def __init__(self,pkg_name):
+        '''
+        패키지 경로 읽어오기
+        '''
         rospack=rospkg.RosPack()
         self.file_path=rospack.get_path(pkg_name)
 
     def read_txt(self,file_name):
+        '''
+        파일경로/path/파일명.txt 로 파일 읽어오기
+        읽어온 파일의 x, y, z, yaw 값을 tmp에 저장
+        '''
         full_file_name=self.file_path+"/path/"+file_name
         openFile = open(full_file_name, 'r')
         out_path=Path()
@@ -444,6 +455,9 @@ class pathReader :
         return out_path
     
     def read_paths(self, scenario):
+        '''
+        시나리오 상에 있는 경로명으로 경로 읽기
+        '''
         paths = []
         for path_name in scenario:
             paths.append(self.read_txt(path_name+".txt"))
@@ -451,6 +465,12 @@ class pathReader :
         return paths
 
 def findLocalPath(ref_path,status_msg):
+    '''
+    지역 경로 설정하기
+    현재 위치를 인식하고, ref_path(목표 경로)의 위치와 거리 측정
+    측정된 거리에 따라 지역 waypoint 설정
+    지역 waypoint를 ROS 메세지 형식으로 변환
+    '''
     out_path=Path()
     current_x=status_msg.position_x
     current_y=status_msg.position_y
@@ -488,11 +508,23 @@ def findLocalPath(ref_path,status_msg):
     return out_path,current_waypoint
 
 class velocityPlanning :
+    '''
+    전역 경로를 통해 정해진 개수(point_num)만큼 속도값 생성
+    '''
     def __init__(self,car_max_speed,road_friction):
+        '''
+        차량 최대 속도와 마찰력 설정
+        '''
         self.car_max_speed=car_max_speed
         self.road_friction=road_friction
  
     def curveBasedVelocity(self,global_path,point_num):
+        '''
+        0 ~ point_num(설정값) : 차량 최고 속도 입력
+        point_num ~ {전역경로 waypoint 개수 - point_num} : 행렬 계산을 통해 최고 속도 구한 후 값 입력
+        {전역경로 waypoint 개수 - point_num} ~ 끝 : 차량 최고 속도 입력
+        위의 방식으로 속도값 저장 후 반환
+        '''
         out_vel_plan=[]
         for i in range(0,point_num):
             out_vel_plan.append(self.car_max_speed)
@@ -534,7 +566,14 @@ class velocityPlanning :
        
 
 class purePursuit :
+    '''
+    경로 waypoint 위치와 현재 차량의 상태를 파악하여,
+    경로 waypoint를 차량이 바라볼 수 있게 각도값과 속도를 조절함.
+    '''
     def __init__(self):
+        '''
+        PurePursuit 계산에 필요한 초기값 설정
+        '''
         self.forward_point=Point()
         self.current_postion=Point()
         self.is_look_forward_point=False
@@ -545,11 +584,16 @@ class purePursuit :
         self.steering=0
         
     def getPath(self,msg):
+        '''
+        경로 메세지 읽기
+        '''
         self.path=msg  #nav_msgs/Path 
     
     
     def getEgoStatus(self,msg):
-
+        '''
+        현재 차량의 속도, x, y, z, yaw값 확인
+        '''
         self.current_vel=msg.velocity  #kph
         self.vehicle_yaw=msg.yaw/180*pi   # rad
         self.current_postion.x=msg.position_x
@@ -559,6 +603,10 @@ class purePursuit :
 
 
     def steering_angle(self):
+        '''
+        경로 waypoint와 차량 위치를 이용하여 차량이 목표 waypoint를 바라보게 할 수 있는 회전값을 구함.
+        거리값을 이용하여 lfd 값도 .
+        '''
         vehicle_position=self.current_postion
         rotated_point=Point()
         self.is_look_forward_point= False
@@ -600,7 +648,13 @@ class purePursuit :
         
 
 class cruiseControl:
+    '''
+    전역 및 지역으로 장애물을 판별한 후 거리에 따라 속도 
+    '''
     def __init__(self,object_vel_gain,object_dis_gain):
+        '''
+        게인값 설정 및 물체 확인 초기 설정
+        '''
         self.object=[False,0]
         self.traffic=[False,0]
         self.Person=[False,0]
@@ -609,6 +663,11 @@ class cruiseControl:
 
 
     def checkObject(self,ref_path,global_vaild_object,local_vaild_object,tl=[]):
+        '''
+        전역 물체의 [][0]번에 따라 0이면 사람, 3이면 표지판으로 판단한다.
+        전역(global)으로 물체가 있으면 현 위치와 거리를 측정한다.
+        거리가 3 미만이면 지역(local)으로 거리를 측정한다.
+        '''
         self.object=[False,0]
         self.traffic=[False,0]
         self.Person=[False,0]
@@ -647,6 +706,12 @@ class cruiseControl:
                                     self.traffic=[True,i]
 
     def acc(self,local_vaild_object,ego_vel,target_vel,status_msg):
+        '''
+        위의 함수에서 사람 혹은 표지판이 있다고 판별나면 속도 조절 시작
+        시간 차, 기본 확보 공간을 설정하고 현 위치와 물체 간 거리 측정
+        속도 게인과 거리 게인을 이용하여 추가 속도를 구함.
+        목표 속도와 {현재 속도  + 추가 속도}를 비교하여 현재 속도를 조절.
+        '''
         out_vel=target_vel
         pre_out_vel = out_vel
 
@@ -709,6 +774,9 @@ class cruiseControl:
         return out_vel
 
 class mgko_obj :
+    '''
+    물체(장애물) 설정
+    '''
     def __init__(self):
         self.num_of_objects=0
         self.pose_x=[]
@@ -720,10 +788,15 @@ class mgko_obj :
 
 
 class vaildObject :
-
+    '''
+    전역 및 지역으로 정지선, 장애물 정보 확인 후 
+    '''
     def __init__(self,stop_line=[]):
         self.stop_line=stop_line
     def get_object(self,num_of_objects,object_type,pose_x,pose_y,velocity):
+        '''
+        설정된 장애물 정보 읽어오기
+        '''
         self.all_object=mgko_obj()
         self.all_object.num_of_objects=num_of_objects
         self.all_object.object_type=object_type
@@ -733,6 +806,11 @@ class vaildObject :
 
 
     def calc_vaild_obj(self,ego_pose):  # x, y, heading
+        '''
+        전역 경로 장애물 정보는 모든 설정된 장애물의 정보 포함
+        지역 경로 장애물 정보는 차량의 현재 위치에 대한 상대적 위치(방향 포함)를 구하여 해당하는 장애물의 정보 포함.
+        정지선이 설정된 경우 장애물과 동일하게 전역 정지선 및 지역 정지선 설정.
+        '''
         global_object_info=[]
         loal_object_info=[]
         
@@ -766,7 +844,13 @@ class vaildObject :
         return global_object_info,loal_object_info
 
 class pidController : ## 속도 제어를 위한 PID 적용 ##
+    '''
+    PD제어(+피드백제어)
+    '''
     def __init__(self):
+        '''
+        PID 제어를 위한 초기 게인 설정 <- PID 최적화를 통해 게인값 조정이 기본
+        '''
         self.p_gain=1.0
         self.i_gain=0.0
         self.d_gain=0.5
@@ -776,6 +860,9 @@ class pidController : ## 속도 제어를 위한 PID 적용 ##
 
 
     def pid(self,target_vel,current_vel):
+        '''
+        피드백 제어를 통해 p제어 및 d제어
+        '''
         error= target_vel-current_vel
         
         p_control=self.p_gain*error
@@ -793,6 +880,13 @@ def latticePlanner(ref_path,global_vaild_object,vehicle_status,current_lane,
                     lattice_gap = 0.3,
                     lattice_weight_gap = 10
                     ):
+    '''
+    %자세한 내용은 기술 보고서를 참조하는 것을 추천%
+    레인(선)의 길이(look_distance), 개수(branch), 레인 간 거리(offset) 설정
+    레인의 설정 값에 맞추어 레인 각각의 시작 및 끝 waypoint 설정
+    가중치(weight)에 따라 weight가 가장 작은 레인 최종 선정
+    전역 및 지역 경로를 동일한 방식으로 
+    '''
     out_path=[]
     selected_lane=-1
     lattic_current_lane=current_lane
