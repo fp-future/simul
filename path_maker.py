@@ -15,7 +15,7 @@ from geometry_msgs.msg import PoseStamped
 class test :
   '''
   경로를 저장할 파일을 생성
-  현재 좌표와 이전 좌표의 거리를 측정하여 0.3m 초과이면 좌표값 파일에 
+  현재 좌표와 이전 좌표의 거리를 측정하여 0.3m 초과이면 좌표값 파일에 저장.
   '''
 
     def __init__(self):
